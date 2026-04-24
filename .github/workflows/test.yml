@@ -1,0 +1,95 @@
+name: Test RDP Setup Script
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  # ── Syntax check (fast, no Docker needed) ──────────────────────────────────
+  syntax:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check setup_rdp.sh syntax
+        run: bash -n setup_rdp.sh
+
+      - name: Check setup_client_macos.sh syntax
+        run: bash -n setup_client_macos.sh
+
+      - name: Check run_tests.sh syntax
+        run: bash -n run_tests.sh
+
+      - name: Check tests/test_inside.sh syntax
+        run: bash -n tests/test_inside.sh
+
+      - name: Check mock scripts syntax
+        run: |
+          for f in tests/mocks/*; do
+            echo "Checking $f..."
+            bash -n "$f"
+          done
+
+  # ── Integration test on Ubuntu 22.04 ──────────────────────────────────────
+  test-ubuntu2204:
+    name: Ubuntu 22.04 Integration Test
+    runs-on: ubuntu-latest
+    needs: syntax
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test image (Ubuntu 22.04)
+        run: |
+          docker build \
+            --file tests/Dockerfile.ubuntu2204 \
+            --tag rdp-test-ubuntu2204 \
+            .
+
+      - name: Run test suite (Ubuntu 22.04)
+        run: |
+          docker run --rm rdp-test-ubuntu2204
+
+  # ── Integration test on Ubuntu 24.04 ──────────────────────────────────────
+  test-ubuntu2404:
+    name: Ubuntu 24.04 Integration Test
+    runs-on: ubuntu-latest
+    needs: syntax
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test image (Ubuntu 24.04)
+        run: |
+          docker build \
+            --file tests/Dockerfile.ubuntu2404 \
+            --tag rdp-test-ubuntu2404 \
+            .
+
+      - name: Run test suite (Ubuntu 24.04)
+        run: |
+          docker run --rm rdp-test-ubuntu2404
+
+  # ── ShellCheck (optional, informational only) ─────────────────────────────
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    continue-on-error: true       # informational, not blocking
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on all scripts
+        run: |
+          shellcheck --severity=warning \
+            setup_rdp.sh \
+            setup_client_macos.sh \
+            run_tests.sh \
+            tests/test_inside.sh \
+            tests/mocks/*
