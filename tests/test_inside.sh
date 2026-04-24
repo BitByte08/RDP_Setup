@@ -168,11 +168,9 @@ assert_file_contains "startwm.sh: unset XDG_RUNTIME_DIR" \
 assert_file_contains "startwm.sh: gnome-session call" \
     "/etc/xrdp/startwm.sh" "gnome-session"
 
-# Version-specific session flag
-if [[ "$UBUNTU_VERSION" == "22.04" ]]; then
-    assert_file_contains "startwm.sh: --session=ubuntu (22.04)" \
-        "/etc/xrdp/startwm.sh" "--session=ubuntu"
-fi
+# --session=ubuntu is used on both 22.04 and 24.04
+assert_file_contains "startwm.sh: --session=ubuntu" \
+    "/etc/xrdp/startwm.sh" "--session=ubuntu"
 
 # =============================================================================
 # POLKIT RULES
