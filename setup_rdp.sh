@@ -33,6 +33,7 @@ RDP_PORT=3389
 CF_HOSTNAME=""         # e.g. rdp.example.com  (set via --hostname flag)
 TUNNEL_TOKEN=""        # set via --token flag (non-interactive)
 SKIP_TUNNEL=false      # --no-tunnel: UFW-only mode
+POWER_MODE=""          # --power disable-sleep | wol | none  (default: ask)
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 usage() {
@@ -40,11 +41,18 @@ usage() {
 Usage: sudo $0 [OPTIONS]
 
 Options:
-  --hostname <host>   Cloudflare hostname for RDP  (e.g. rdp.example.com)
-  --tunnel-name <n>   Cloudflare tunnel name        (default: ubuntu-rdp)
-  --token <token>     Cloudflare tunnel token       (non-interactive mode)
-  --port <port>       Local RDP port                (default: 3389)
+  --hostname <host>   Cloudflare hostname for RDP       (e.g. rdp.example.com)
+  --tunnel-name <n>   Cloudflare tunnel name             (default: ubuntu-rdp)
+  --token <token>     Cloudflare tunnel token            (non-interactive mode)
+  --port <port>       Local RDP port                     (default: 3389)
   --no-tunnel         Skip Cloudflare; open UFW port only
+  --power <mode>      Power management mode:
+                        disable-sleep  Mask all sleep/suspend targets (safe for
+                                       always-on desktops plugged into AC)
+                        wol            Enable Wake-on-LAN so the machine can be
+                                       woken remotely; does NOT disable sleep
+                        none           Skip power management setup
+                      (default: interactive prompt)
   -h, --help          Show this help
 
 Examples:
@@ -70,6 +78,7 @@ parse_args() {
             --token)       TUNNEL_TOKEN="$2";   shift 2 ;;
             --port)        RDP_PORT="$2";       shift 2 ;;
             --no-tunnel)   SKIP_TUNNEL=true;    shift ;;
+            --power)       POWER_MODE="$2";     shift 2 ;;
             -h|--help)     usage ;;
             *) log_error "Unknown option: $1"; usage ;;
         esac
@@ -433,7 +442,111 @@ CFCFG
 }
 
 # =============================================================================
-# 9. START XRDP
+# 9. POWER MANAGEMENT
+# =============================================================================
+
+# ── 9a. Disable all sleep/suspend targets ─────────────────────────────────────
+power_disable_sleep() {
+    log_step "Power: disabling sleep / suspend"
+
+    # Mask systemd sleep targets — survives reboots
+    systemctl mask sleep.target suspend.target hibernate.target \
+        hybrid-sleep.target 2>/dev/null || true
+
+    # Prevent GNOME from auto-suspending (run as the login user, not root)
+    # Works on both X11 and Wayland GNOME sessions.
+    local real_user="${SUDO_USER:-}"
+    if [[ -n "$real_user" ]]; then
+        sudo -u "$real_user" \
+            gsettings set org.gnome.settings-daemon.plugins.power \
+            sleep-inactive-ac-type 'nothing' 2>/dev/null || true
+        sudo -u "$real_user" \
+            gsettings set org.gnome.settings-daemon.plugins.power \
+            sleep-inactive-battery-type 'nothing' 2>/dev/null || true
+        log_ok "GNOME auto-suspend disabled for user '$real_user'"
+    else
+        log_warn "Could not detect login user — set GNOME auto-suspend manually:"
+        log_warn "  gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'"
+    fi
+
+    log_ok "All sleep/suspend targets masked"
+}
+
+# ── 9b. Wake-on-LAN ───────────────────────────────────────────────────────────
+power_enable_wol() {
+    log_step "Power: enabling Wake-on-LAN"
+
+    apt-get install -y ethtool
+
+    # Detect the default-route interface (the NIC used for internet access)
+    local iface
+    iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+
+    if [[ -z "$iface" ]]; then
+        log_warn "Could not detect network interface — enable WoL manually:"
+        log_warn "  sudo ethtool -s <iface> wol g"
+        return
+    fi
+
+    local mac
+    mac=$(ip link show "$iface" 2>/dev/null | awk '/link\/ether/ {print $2}')
+
+    # Enable WoL magic-packet mode for current session
+    ethtool -s "$iface" wol g 2>/dev/null || \
+        log_warn "ethtool failed — your NIC or driver may not support WoL"
+
+    # Persist across reboots with a systemd service
+    cat > /etc/systemd/system/wol-enable.service <<WOLS
+[Unit]
+Description=Enable Wake-on-LAN on ${iface}
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ethtool -s ${iface} wol g
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+WOLS
+
+    systemctl daemon-reload
+    systemctl enable --now wol-enable.service
+
+    log_ok "WoL enabled on ${iface}  (MAC: ${mac:-unknown})"
+    echo -e ""
+    echo -e "  ${BOLD}MAC address:${NC}  ${mac:-run: ip link show ${iface}}"
+    echo -e ""
+    echo -e "${YELLOW}Next steps for WoL:${NC}"
+    echo -e "  1. Enable WoL in BIOS/UEFI  (usually under 'Power' or 'Advanced')"
+    echo -e "  2. To wake the machine from another device on the same network:"
+    echo -e "     ${GREEN}wakeonlan ${mac:-<MAC>}${NC}     # or  etherwake ${mac:-<MAC>}"
+    echo -e "  3. For remote (external) wake, an always-on relay device is needed:"
+    echo -e "     e.g. Raspberry Pi / VPS that can reach this machine's subnet"
+    echo -e "     The relay runs: wakeonlan -i <broadcast-IP> ${mac:-<MAC>}"
+    echo -e ""
+    echo -e "${YELLOW}Important:${NC} While sleeping the Cloudflare Tunnel is offline."
+    echo -e "  Wake the machine first, wait ~60 s, then connect via RDP."
+}
+
+# ── 9c. Apply power management (default: disable-sleep) ──────────────────────
+power_prompt_and_apply() {
+    # Default is disable-sleep — keeps RDP always reachable without extra setup.
+    # Override with --power wol or --power none.
+    local mode="${POWER_MODE:-disable-sleep}"
+    case "$mode" in
+        disable-sleep) power_disable_sleep ;;
+        wol)           power_enable_wol ;;
+        none)          log_info "Power management skipped (--power none)" ;;
+        *)
+            log_error "Unknown --power mode: $mode"
+            log_error "Valid modes: disable-sleep | wol | none"
+            exit 1 ;;
+    esac
+}
+
+# =============================================================================
+# 10. START XRDP
 # =============================================================================
 start_xrdp() {
     log_step "Starting xrdp service"
@@ -539,6 +652,7 @@ main() {
     configure_polkit
     configure_xrdp
     configure_firewall
+    power_prompt_and_apply
     start_xrdp
 
     if [[ "$SKIP_TUNNEL" == false ]]; then

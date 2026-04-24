@@ -216,6 +216,10 @@ assert_mock_called "systemctl: daemon-reload" \
 # =============================================================================
 # NO-TUNNEL mode: cloudflared NOT called
 # =============================================================================
+section "Power management (sleep disabled)"
+assert_mock_called "systemctl: sleep.target masked" \
+    "/tmp/mock_systemctl.log" "mask sleep.target"
+
 section "Cloudflare tunnel skipped in --no-tunnel mode"
 if [[ -f /tmp/mock_cloudflared.log ]]; then
     fail "cloudflared should not be called in --no-tunnel mode"
