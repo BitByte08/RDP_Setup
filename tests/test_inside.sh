@@ -44,6 +44,29 @@ assert_file_not_contains() {
     fi
 }
 
+# Like assert_file_contains but uses ERE (grep -E) so ^ $ anchors work.
+assert_file_matches() {
+    local desc="$1" path="$2" pattern="$3"
+    if [[ ! -f "$path" ]]; then
+        fail "$desc (file not found: $path)"
+    elif grep -qE "$pattern" "$path" 2>/dev/null; then
+        pass "$desc"
+    else
+        fail "$desc (regex not matched: '$pattern' in $path)"
+    fi
+}
+
+assert_file_not_matches() {
+    local desc="$1" path="$2" pattern="$3"
+    if [[ ! -f "$path" ]]; then
+        fail "$desc (file not found: $path)"
+    elif ! grep -qE "$pattern" "$path" 2>/dev/null; then
+        pass "$desc"
+    else
+        fail "$desc (should NOT match: '$pattern' in $path)"
+    fi
+}
+
 assert_dir_exists() {
     local desc="$1" path="$2"
     [[ -d "$path" ]] && pass "$desc" || fail "$desc (missing dir: $path)"
@@ -102,15 +125,16 @@ fi
 # WAYLAND CONFIGURATION
 # =============================================================================
 section "Wayland disabled in GDM"
-assert_file_contains \
+# Use regex with ^ anchor so "#WaylandEnable=false" does NOT match "^WaylandEnable=false"
+assert_file_matches \
     "GDM config has WaylandEnable=false" \
     "/etc/gdm3/custom.conf" \
-    "WaylandEnable=false"
+    "^WaylandEnable=false"
 
-assert_file_not_contains \
+assert_file_not_matches \
     "GDM config has no commented WaylandEnable" \
     "/etc/gdm3/custom.conf" \
-    "#WaylandEnable=false"
+    "^#WaylandEnable=false"
 
 # =============================================================================
 # XRDP CONFIGURATION
@@ -199,11 +223,9 @@ fi
 section "Running setup_rdp.sh --hostname test.example.com (tunnel mode)"
 rm -f /tmp/mock_*.log
 
-# Pre-create cloudflared cert file that login would create
-mkdir -p ~/.cloudflared
-echo '{}' > ~/.cloudflared/mock-cert.pem
-echo '[{"id":"aaaabbbb-cccc-dddd-eeee-000011112222","name":"ubuntu-rdp"}]' \
-    > /tmp/tunnel_list.json
+# cloudflared mock creates ~/.cloudflared/<id>.json on "tunnel create"
+# and returns proper JSON on "tunnel list --output json"
+# Nothing to pre-create here; the mock handles it.
 
 if bash /opt/setup_rdp.sh --hostname test.example.com 2>&1 | tee /tmp/setup_tunnel_output.log; then
     pass "setup_rdp.sh (tunnel mode) exited 0"

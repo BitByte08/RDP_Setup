@@ -3,36 +3,28 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Seoul
 
-RUN apt-get update -q && apt-get install -y --no-install-recommends \
+RUN apt-get update -q && \
+    apt-get install -y --no-install-recommends \
         bash curl sudo python3 \
-    && rm -rf /var/lib/apt/lists/*
+        xrdp dbus-x11 xauth \
+        ufw ssl-cert
+
+# Mock gnome-shell as installed
+RUN printf "\nPackage: gnome-shell\nStatus: install ok installed\nPriority: optional\nSection: universe/gnome\nInstalled-Size: 5000\nMaintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>\nArchitecture: amd64\nVersion: 46.0-1ubuntu1\nDescription: graphical shell for the GNOME desktop\n" \
+    >> /var/lib/dpkg/status
 
 # Mock GDM config
-RUN mkdir -p /etc/gdm3 && cat > /etc/gdm3/custom.conf <<'EOF'
-# GDM configuration storage
+RUN mkdir -p /etc/gdm3 && \
+    printf "[daemon]\n#WaylandEnable=false\n\n[security]\n\n[xdmcp]\n\n[chooser]\n\n[debug]\n" \
+    > /etc/gdm3/custom.conf
 
-[daemon]
-#WaylandEnable=false
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-EOF
-
-# Polkit dirs
 RUN mkdir -p /etc/polkit-1/rules.d \
              /etc/polkit-1/localauthority/50-local.d
 
-# Inject mocks early in PATH
 COPY tests/mocks/ /usr/local/bin/mock_bins/
 RUN chmod +x /usr/local/bin/mock_bins/*
 
-# Copy scripts
-COPY setup_rdp.sh    /opt/setup_rdp.sh
+COPY setup_rdp.sh         /opt/setup_rdp.sh
 COPY tests/test_inside.sh /opt/test_inside.sh
 RUN chmod +x /opt/setup_rdp.sh /opt/test_inside.sh
 
