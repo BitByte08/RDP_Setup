@@ -213,7 +213,14 @@ fi
 STATIC
 
     chmod +x /etc/xrdp/startwm.sh
-    log_ok "GNOME session script created"
+
+    # Diagnostic: verify the file was written correctly
+    if grep -qF -- "--session=ubuntu" /etc/xrdp/startwm.sh; then
+        log_ok "GNOME session script created (--session=ubuntu confirmed)"
+    else
+        log_warn "startwm.sh written but --session=ubuntu NOT found – dumping content:"
+        sed 's/^/  /' /etc/xrdp/startwm.sh >&2
+    fi
 }
 
 # =============================================================================
@@ -633,11 +640,13 @@ main() {
 
     install_xrdp
     disable_wayland
-    configure_gnome_session
     configure_polkit
     configure_xrdp
     configure_firewall
     power_prompt_and_apply
+    # configure_gnome_session runs last before start to ensure nothing
+    # (apt postinst, ucf, dpkg triggers) overwrites startwm.sh afterwards.
+    configure_gnome_session
     start_xrdp
 
     if [[ "$SKIP_TUNNEL" == false ]]; then

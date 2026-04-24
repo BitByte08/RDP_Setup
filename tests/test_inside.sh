@@ -30,6 +30,10 @@ assert_file_contains() {
         pass "$desc"
     else
         fail "$desc (pattern not found: '$pattern' in $path)"
+        # Dump file contents so CI logs are self-diagnosing
+        echo -e "  ${YELLOW}>>> actual content of $path <<<${NC}"
+        sed 's/^/      /' "$path"
+        echo -e "  ${YELLOW}>>> end <<<${NC}"
     fi
 }
 
