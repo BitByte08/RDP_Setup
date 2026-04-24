@@ -1,0 +1,8 @@
+#!/bin/bash
+# Mock: ufw
+echo "ufw $*" >> /tmp/mock_ufw.log
+case "$1" in
+    status) echo "Status: active" ;;
+    *) ;;
+esac
+exit 0

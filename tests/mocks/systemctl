@@ -1,0 +1,11 @@
+#!/bin/bash
+# Mock: systemctl
+echo "systemctl $*" >> /tmp/mock_systemctl.log
+case "$1" in
+    is-active)   exit 0 ;;          # report all services as active
+    status)      echo "Active: active (running) (mock)" ;;
+    daemon-reload) ;;
+    enable|start|restart|stop) ;;
+    *) ;;
+esac
+exit 0

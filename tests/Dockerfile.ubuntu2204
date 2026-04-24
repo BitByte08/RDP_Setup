@@ -1,0 +1,46 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Seoul
+
+# Pre-create files/dirs that would normally exist on a real desktop install
+RUN apt-get update -q && apt-get install -y --no-install-recommends \
+        bash curl sudo python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mock GDM config (exists on a real GNOME desktop)
+RUN mkdir -p /etc/gdm3 && cat > /etc/gdm3/custom.conf <<'EOF'
+# GDM configuration storage
+
+[daemon]
+# Uncomment the line below to force the login screen to use Xorg
+#WaylandEnable=false
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
+EOF
+
+# Polkit dirs
+RUN mkdir -p /etc/polkit-1/rules.d \
+             /etc/polkit-1/localauthority/50-local.d
+
+# Mock gnome-shell presence (dpkg -l check)
+RUN mkdir -p /var/lib/dpkg/info && \
+    echo "Package: gnome-shell" > /var/lib/dpkg/info/gnome-shell.list && \
+    dpkg --add-architecture amd64 2>/dev/null || true
+
+# Inject mocks early in PATH so they shadow real binaries
+COPY tests/mocks/ /usr/local/bin/mock_bins/
+RUN chmod +x /usr/local/bin/mock_bins/*
+
+# Copy scripts
+COPY setup_rdp.sh    /opt/setup_rdp.sh
+COPY tests/test_inside.sh /opt/test_inside.sh
+RUN chmod +x /opt/setup_rdp.sh /opt/test_inside.sh
+
+CMD ["/bin/bash", "/opt/test_inside.sh"]

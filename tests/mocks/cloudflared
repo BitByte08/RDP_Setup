@@ -1,0 +1,29 @@
+#!/bin/bash
+# Mock: cloudflared
+echo "cloudflared $*" >> /tmp/mock_cloudflared.log
+case "$*" in
+    "--version")
+        echo "cloudflared version mock-1.0.0 (built mock)"
+        ;;
+    "tunnel login")
+        echo "[mock] Logged into Cloudflare"
+        mkdir -p ~/.cloudflared
+        echo '{}' > ~/.cloudflared/cert.pem
+        ;;
+    "tunnel create "*)
+        echo "[mock] Created tunnel: ${*##* }"
+        ;;
+    "tunnel list --output json")
+        echo '[{"id":"aaaabbbb-cccc-dddd-eeee-000011112222","name":"ubuntu-rdp","created_at":"2024-01-01T00:00:00Z"}]'
+        ;;
+    "tunnel route dns "*)
+        echo "[mock] DNS route set"
+        ;;
+    "service install")
+        echo "[mock] Service installed"
+        ;;
+    *)
+        echo "[mock] cloudflared $*"
+        ;;
+esac
+exit 0
