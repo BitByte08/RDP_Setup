@@ -149,6 +149,12 @@ assert_file_exists   "xrdp.ini.bak created"   "/etc/xrdp/xrdp.ini.bak"
 # GNOME SESSION SCRIPT
 # =============================================================================
 section "GNOME session (startwm.sh)"
+# Diagnostic: always print startwm.sh so failures are self-explanatory in CI logs
+if [[ -f /etc/xrdp/startwm.sh ]]; then
+    echo -e "  ${CYAN}[startwm.sh content]${NC}"
+    sed 's/^/    /' /etc/xrdp/startwm.sh
+fi
+
 assert_file_exists   "startwm.sh exists"       "/etc/xrdp/startwm.sh"
 assert_file_exists   "startwm.sh.bak created"  "/etc/xrdp/startwm.sh.bak"
 assert_file_contains "startwm.sh: XDG_SESSION_TYPE=x11" \
